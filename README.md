@@ -1,47 +1,82 @@
 # Detecci-n-de-figuras
-import os
-import sys
-import urllib.request
 import cv2
+import numpy as np
+import os
 
-BASE = os.path.dirname(os.path.abspath(__file__))
-RUTA_DE_IMAGEN = os.path.join(BASE, sys.argv[1] if len(sys.argv) > 1 else "rostro_01.png")
-URL_YUNET = ("https://media.githubusercontent.com/media/opencv/opencv_zoo/main/"
-             "models/face_detection_yunet/face_detection_yunet_2023mar.onnx")
-RUTA_YUNET = os.path.join(BASE, "face_detection_yunet_2023mar.onnx")
+def detectar_figuras(frame):
+    """
+    Detecta figuras geométricas en una imagen y las dibuja con su nombre.
+    """
 
-def detectar_rostros(gray):
-    """Devuelve la lista de (x, y, w, h)"""
-    if hasattr(cv2, "CascadeClassifier"):
-        cascada = os.path.join(cv2.data.haarcascades, "haarcascade_frontalface_default.xml")
-        clasificador = cv2.CascadeClassifier(cascada)
-        if not clasificador.empty():
-            return list(clasificador.detectMultiScale(gray, 1.3, 5))
-        print("Aviso: no se encontro la cascada de Haar, se usara YuNet.")
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-    if not os.path.exists(RUTA_YUNET):
-        print("Descargando el modelo YuNet (solo si es descargado por primera vez)...")
-        urllib.request.urlretrieve(URL_YUNET, RUTA_YUNET)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
 
-    detector = cv2.FaceDetectorYN.create(RUTA_YUNET, "", (gray.shape[1], gray.shape[0]),
-                                         0.6, 0.3, 5000)
-    faces = detector.detect(gray)[1]
-    if faces is None:
-        return []
-    return [(int(f[0]), int(f[1]), int(f[2]), int(f[3])) for f in faces]
-img = cv2.imread(RUTA_DE_IMAGEN)
+    edges = cv2.Canny(blurred, 50, 150)
 
-if img is None:
-    print(f"Error: no se pudo cargar la imagen '{RUTA_DE_IMAGEN}'.")
-else:
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    rostros = detectar_rostros(gray)
+    contours, _ = cv2.findContours(
+        edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
 
-    for (x, y, w, h) in rostros:
-        cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 0), 2)
+    for cnt in contours:
 
-    print(f"Rostros detectados: {len(rostros)}")
+        if cv2.contourArea(cnt) < 300:
+            continue
 
-    cv2.imshow("Deteccion de rostros", img)
+        approx = cv2.approxPolyDP(
+            cnt, 0.04 * cv2.arcLength(cnt, True), True
+        )
+
+        x, y, w, h = cv2.boundingRect(approx)
+
+        num_lados = len(approx)
+
+        if num_lados == 3:
+            figura = "Triángulo"
+
+        elif num_lados == 4:
+            aspect_ratio = w / float(h)
+            figura = "Cuadrado" if 0.95 <= aspect_ratio <= 1.05 else "Rectángulo"
+
+        elif num_lados == 5:
+            figura = "Pentágono"
+
+        elif num_lados == 6:
+            figura = "Hexágono"
+
+        else:
+            figura = "Círculo"
+
+        cv2.drawContours(frame, [approx], -1, (0, 255, 0), 2)
+
+        cv2.putText(
+            frame, figura, (x, y - 10),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2
+        )
+
+    return frame
+
+
+def main():
+    ruta_imagen = "balon.jpg"
+
+    if not os.path.exists(ruta_imagen):
+        print(f"Error: No se encontró el archivo '{ruta_imagen}'.")
+        return
+
+    imagen = cv2.imread(ruta_imagen)
+
+    if imagen is None:
+        print("Error: No se pudo leer la imagen.")
+        return
+
+    imagen_con_figuras = detectar_figuras(imagen)
+
+    cv2.imshow("Reconocimiento de Figuras Geometricas", imagen_con_figuras)
+
     cv2.waitKey(0)
     cv2.destroyAllWindows()
+
+
+if _name_ == "_main_":
+    main()
